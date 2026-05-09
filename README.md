@@ -1,22 +1,43 @@
 # opencode-plugin-snip
 
-`opencode-plugin-snip` is an OpenCode plugin package that does two things:
+`opencode-plugin-snip` is an OpenCode plugin that reduces prompt size before messages are sent to the LLM, then shows the saved-character total live in the TUI.
 
-1. Compresses chat history deterministically before it is sent to the LLM.
-2. Shows a live `snip` indicator in the TUI with per-session saved-character stats.
+It is built around one constraint: compression must be deterministic. The same input history should compress the same way every time, so you get smaller prompts without introducing cache-hostile randomness or paying for an extra model pass.
 
-The goal is to reduce prompt size without using another model and without changing old messages nondeterministically.
+## Why this plugin stands out
+
+- Deterministic compression. No LLM rewriting step, no probabilistic summarization, no drifting history.
+- Zero extra model cost. Compression is done with fixed rules over message parts and text.
+- Session-scoped savings. Every session tracks its own saved-character total and starts from `0.0k`.
+- Live TUI feedback. The current mode and cumulative savings are visible in the prompt row.
+- Tool-aware cleanup. Tool payloads are normalized instead of blindly dumped back into history.
+- Protected-block safe. `<system-reminder>...</system-reminder>` blocks are preserved.
+- Three compression levels. Choose `pro`, `max`, or `max++` depending on how aggressive you want to be.
 
 ## Features
 
-- Deterministic compression only. No LLM-based rewriting.
 - Removes framework control events such as `[step-start]`, `[step-finish]`, and `[reasoning]` when they appear in framework-event form.
+- Preserves non-framework user text that merely contains similar markers.
 - Preserves `<system-reminder>...</system-reminder>` blocks.
 - Normalizes tool output in `max` and `max++` modes.
-- Supports three modes: `pro`, `max`, `max++`.
+- Truncates oversized tool output in `max++` mode.
 - Tracks saved characters per session, not globally.
-- New sessions start from `0.0k`.
 - Adds a bright yellow `snip` label to `home_prompt_right` and `session_prompt_right`.
+- Keeps optional request logging off by default.
+
+## What you see
+
+In the TUI, the plugin shows a label like this:
+
+```text
+snip max 12.4k
+```
+
+Meaning:
+
+- `snip` is the plugin label.
+- `max` is the active compression mode.
+- `12.4k` is the cumulative characters saved for the current session only.
 
 ## Install
 
@@ -37,6 +58,8 @@ OpenCode detects the plugin package from these exports:
 - `exports["./server"]`
 - `exports["./tui"]`
 
+After install, OpenCode patches the relevant config files for you.
+
 ## Configuration
 
 After install, OpenCode writes plugin entries into `opencode.json` and `tui.json`.
@@ -53,11 +76,14 @@ The server plugin supports these options:
 }
 ```
 
+`logEnabled` defaults to `false`.
+
 ### Modes
 
 `pro`
 
 - Smallest behavior change.
+- Best when you want conservative cleanup.
 - Keeps tool payloads mostly intact.
 
 `max`
@@ -65,24 +91,19 @@ The server plugin supports these options:
 - Default mode.
 - Removes framework noise.
 - Normalizes tool payloads.
+- Best general-purpose setting.
 
 `max++`
 
 - Same as `max`, plus truncates tool output using `toolMaxLines` and `toolMaxChars`.
+- Best when tool output is the main source of prompt bloat.
 
 ## TUI behavior
-
-The TUI plugin shows a right-side label such as:
-
-```text
-snip max 12.4k
-```
-
-Behavior:
 
 - The mode label comes from the server plugin config.
 - The number is the cumulative saved characters for the current session only.
 - A brand-new session starts at `0.0k`.
+- The home screen shows `0.0k` because savings are session-based.
 
 ## Files written by the plugin
 
@@ -100,18 +121,22 @@ Server side:
 
 - Hooks `experimental.chat.system.transform`
 - Hooks `experimental.chat.messages.transform`
-- Compresses message parts deterministically
-- Updates per-session saved-character stats
+- Compresses message parts deterministically.
+- Removes control-event parts and matching framework-event text lines.
+- Rewrites tool payloads into a smaller, stable format.
+- Updates per-session saved-character stats.
 
 TUI side:
 
-- Registers `home_prompt_right`
-- Registers `session_prompt_right`
-- Polls the stats file and renders live saved-character counts
+- Registers `home_prompt_right`.
+- Registers `session_prompt_right`.
+- Polls the stats file and renders live saved-character counts.
 
 ## Local development
 
 You can also use this package source directly as a local plugin during development.
+
+Replace `/absolute/path/to/opencode-plugin-snip` with your own local checkout path.
 
 Example `opencode.json`:
 
@@ -119,7 +144,7 @@ Example `opencode.json`:
 {
   "plugin": [
     [
-      "D:/Github/Opencode_plugin/src/server.js",
+      "/absolute/path/to/opencode-plugin-snip/src/server.js",
       {
         "mode": "max",
         "logEnabled": false,
@@ -137,7 +162,7 @@ Example `tui.json`:
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
-    "D:/Github/Opencode_plugin/src/tui.tsx"
+    "/absolute/path/to/opencode-plugin-snip/src/tui.tsx"
   ]
 }
 ```
