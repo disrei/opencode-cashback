@@ -9,6 +9,12 @@ It is built around one constraint: compression must be deterministic. The same i
 Install:
 
 ```bash
+opencode plugin opencode-plugin-snip --global
+```
+
+Install only for the current directory:
+
+```bash
 opencode plugin opencode-plugin-snip
 ```
 
@@ -64,13 +70,13 @@ Meaning:
 Install from npm through OpenCode:
 
 ```bash
-opencode plugin opencode-plugin-snip
+opencode plugin opencode-plugin-snip --global
 ```
 
-If you want to install to the global OpenCode config scope, use:
+If you want to install only for the current directory, use:
 
 ```bash
-opencode plugin opencode-plugin-snip --global
+opencode plugin opencode-plugin-snip
 ```
 
 OpenCode detects the plugin package from these exports:
@@ -79,6 +85,27 @@ OpenCode detects the plugin package from these exports:
 - `exports["./tui"]`
 
 After install, OpenCode patches the relevant config files for you.
+
+### Important: local vs global install
+
+`opencode plugin opencode-plugin-snip` does not write to the global config by default.
+
+Default behavior:
+
+- Local install writes to `<current-directory>/.opencode/opencode.json`
+- Local install writes to `<current-directory>/.opencode/tui.json`
+
+For example, if you run the command from `C:\Users\Disrei`, OpenCode may write to:
+
+- `C:\Users\Disrei\.opencode\opencode.json`
+- `C:\Users\Disrei\.opencode\tui.json`
+
+If you want the plugin in the real global OpenCode config, use `--global`. That writes to your user config directory instead, such as:
+
+- `~/.config/opencode/opencode.json`
+- `~/.config/opencode/tui.json`
+
+Using plain `npm install opencode-plugin-snip` is not enough. The package must be installed through `opencode plugin ...` so OpenCode can patch the config files.
 
 ## Configuration
 
