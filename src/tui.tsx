@@ -46,8 +46,14 @@ function labelForMode(mode: string) {
   return "snip max"
 }
 
-function loadSavedChars() {
-  return 0
+function currentRouteSessionID(api: TuiPluginApi) {
+  const current = api.route.current
+  if (current?.name !== "session") {
+    return null
+  }
+
+  const sessionID = current.params?.sessionID || current.params?.session_id
+  return typeof sessionID === "string" && sessionID ? sessionID : null
 }
 
 function loadSavedCharsForSession(sessionID: string) {
@@ -64,12 +70,16 @@ function formatSavedChars(savedChars: number) {
   return `${value.toFixed(1)}k`
 }
 
-function useSavedChars() {
-  const [savedChars, setSavedChars] = createSignal(loadSavedChars())
+function useCurrentRouteSavedChars(api: TuiPluginApi) {
+  const [savedChars, setSavedChars] = createSignal(0)
 
-  const timer = setInterval(() => {
-    setSavedChars(loadSavedChars())
-  }, 2000)
+  const update = () => {
+    const sessionID = currentRouteSessionID(api)
+    setSavedChars(sessionID ? loadSavedCharsForSession(sessionID) : 0)
+  }
+
+  update()
+  const timer = setInterval(update, 2000)
 
   onCleanup(() => clearInterval(timer))
 
@@ -89,9 +99,10 @@ function useSessionSavedChars(sessionID: string) {
 }
 
 function HomeLabel(props: { api: TuiPluginApi; label: string }) {
-  const savedChars = useSavedChars()
+  const savedChars = useCurrentRouteSavedChars(props.api)
   const text = createMemo(() => {
     props.api.state.session.count()
+    props.api.route.current
     return `${props.label} ${formatSavedChars(savedChars())}`
   })
 
@@ -116,8 +127,9 @@ function rightSlot(api: TuiPluginApi, label: string): TuiSlotPlugin {
       home_prompt_right() {
         return <HomeLabel api={api} label={label} />
       },
-      session_prompt_right(value) {
-        return <SessionLabel api={api} label={label} sessionID={value.session_id} />
+      session_prompt_right() {
+        const selectedSessionID = currentRouteSessionID(api) || ""
+        return <SessionLabel api={api} label={label} sessionID={selectedSessionID} />
       },
     },
   }
