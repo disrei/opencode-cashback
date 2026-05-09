@@ -1,0 +1,39 @@
+{
+  "name": "opencode-plugin-snip",
+  "version": "0.1.0",
+  "description": "Deterministic OpenCode message compression with per-session saved-character stats and a TUI indicator.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./server": {
+      "default": "./src/server.js",
+      "config": {
+        "mode": "max",
+        "logEnabled": false,
+        "toolMaxLines": 40,
+        "toolMaxChars": 4000
+      }
+    },
+    "./tui": {
+      "default": "./src/tui.tsx"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "plugin",
+    "tui",
+    "compression"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=0.0.0",
+    "solid-js": ">=1.9.0"
+  }
+}
