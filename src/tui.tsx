@@ -7,6 +7,7 @@ import type { TuiPlugin, TuiPluginModule, TuiPluginApi, TuiSlotPlugin } from "@o
 
 const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json")
 const STATS_PATH = join(homedir(), ".config", "opencode", "snip-stats.json")
+const PACKAGE_NAME = "opencode-plugin-snip"
 
 function normalizePluginSpec(spec: string) {
   return String(spec || "")
@@ -17,7 +18,7 @@ function normalizePluginSpec(spec: string) {
 
 function isLogPluginSpec(spec: string) {
   const normalized = normalizePluginSpec(spec)
-  return basename(normalized) === "server.js" || basename(normalized) === "log-llm.js"
+  return normalized === PACKAGE_NAME || basename(normalized) === "server.js" || basename(normalized) === "log-llm.js"
 }
 
 function loadMode() {

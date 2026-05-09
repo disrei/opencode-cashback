@@ -5,6 +5,7 @@ import { homedir } from "node:os"
 
 const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json")
 const PLUGIN_PATH = fileURLToPath(import.meta.url)
+const PACKAGE_NAME = "opencode-plugin-snip"
 const DEFAULT_LOG_PATH = join(homedir(), "opencode-llm.log")
 const STATS_PATH = join(homedir(), ".config", "opencode", "snip-stats.json")
 const DEFAULT_MAX_PLUS_PLUS_TOOL_LINES = 40
@@ -79,7 +80,7 @@ function loadConfigOptions() {
       }
 
       const [spec, pluginOptions] = entry
-      if (normalizePluginSpec(spec) !== normalizePluginSpec(PLUGIN_PATH)) {
+      if (!matchesServerPluginSpec(spec)) {
         continue
       }
 
@@ -92,6 +93,11 @@ function loadConfigOptions() {
   }
 
   return undefined
+}
+
+function matchesServerPluginSpec(spec) {
+  const normalized = normalizePluginSpec(spec)
+  return normalized === normalizePluginSpec(PLUGIN_PATH) || normalized === PACKAGE_NAME
 }
 
 function normalizePluginSpec(spec) {
@@ -214,7 +220,10 @@ function isRecord(value) {
 
 function detectSessionID(originalMessages, compressedMessages) {
   for (const message of [...(originalMessages || []), ...(compressedMessages || [])]) {
-    const sessionID = message?.sessionID || message?.info?.sessionID
+    const sessionID =
+      message?.sessionID ||
+      message?.info?.sessionID ||
+      message?.parts?.find?.((part) => typeof part?.sessionID === "string" && part.sessionID)?.sessionID
     if (typeof sessionID === "string" && sessionID) {
       return sessionID
     }
