@@ -18,7 +18,12 @@ function normalizePluginSpec(spec: string) {
 
 function isLogPluginSpec(spec: string) {
   const normalized = normalizePluginSpec(spec)
-  return normalized === PACKAGE_NAME || basename(normalized) === "server.js" || basename(normalized) === "log-llm.js"
+  return (
+    normalized === PACKAGE_NAME ||
+    normalized.startsWith(`${PACKAGE_NAME}@`) ||
+    basename(normalized) === "server.js" ||
+    basename(normalized) === "log-llm.js"
+  )
 }
 
 function loadMode() {
