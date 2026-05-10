@@ -56,17 +56,18 @@ What you get immediately:
 In the TUI, the plugin shows a label like this:
 
 ```text
-snip max 12.4k
+snip max 107.3k
 ```
 
 <img width="310" height="69" alt="image" src="https://github.com/user-attachments/assets/9f0f91a9-be76-4cef-a37b-bd1726576f90" />
+
 
 
 Meaning:
 
 - `snip` is the plugin label.
 - `max` is the active compression mode.
-- `12.4k` is the cumulative characters saved for the current session only.
+- `107.3k` is the cumulative characters saved for the current session only.
 
 ## Install
 
