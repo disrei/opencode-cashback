@@ -7,11 +7,12 @@ const DEFAULT_LOG_PATH = join(homedir(), "opencode-llm.log")
 const STATS_PATH = join(homedir(), ".config", "opencode", "snip-stats.json")
 const PLUGIN_META_PATH = join(homedir(), ".local", "state", "opencode", "plugin-meta.json")
 const VERSION_CHECK_PATH = join(homedir(), ".local", "state", "opencode", "snip-version-check.json")
-const DEFAULT_MAX_PLUS_PLUS_TOOL_LINES = 40
-const DEFAULT_MAX_PLUS_PLUS_TOOL_CHARS = 4000
 const PACKAGE_NAME = "opencode-plugin-snip"
 const VERSION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
+const HISTORICAL_TOOL_OUTPUT_OMITTED = "[historical-tool-output-omitted]"
+const SYSTEM_REMINDER_PATTERN = /<system-reminder(?:\s|>)/i
+const HISTORICAL_TOOL_OUTPUT_OMIT_THRESHOLD_CHARS = 1500
 
 const REMOVED_CONTROL_PREFIXES = ["[step-start]", "[step-finish]", "[reasoning]"]
 const PROTECTED_BLOCK_TAGS = ["system-reminder"]
@@ -30,8 +31,13 @@ export default async function SnipServerPlugin(_input, options) {
 
     "experimental.chat.messages.transform": async (_input, output) => {
       const originalMessages = output.messages
+      const lastUserMessageIndex = findLastUserMessageIndex(originalMessages)
       const compressedMessages = originalMessages
-        .map((message) => compressMessage(message, settings))
+        .map((message, index) =>
+          compressMessage(message, settings, {
+            preserveToolOutput: shouldPreserveToolOutput(settings, index, lastUserMessageIndex),
+          }),
+        )
         .filter(Boolean)
 
       updateSavedCharsStats(originalMessages, compressedMessages, _input?.sessionID || _input?.session_id)
@@ -85,15 +91,11 @@ function resolveSettings(options) {
   const mode = normalizeMode(options?.mode)
   const logEnabled = parseBoolean(options?.logEnabled, false)
   const logPath = resolveLogPath(options?.logPath)
-  const toolMaxLines = parsePositiveInteger(options?.toolMaxLines, DEFAULT_MAX_PLUS_PLUS_TOOL_LINES)
-  const toolMaxChars = parsePositiveInteger(options?.toolMaxChars, DEFAULT_MAX_PLUS_PLUS_TOOL_CHARS)
 
   return {
     mode,
     logEnabled,
     logPath,
-    toolMaxLines,
-    toolMaxChars,
   }
 }
 
@@ -209,15 +211,6 @@ function resolveLogPath(value) {
 
   const trimmed = value.trim()
   return trimmed || DEFAULT_LOG_PATH
-}
-
-function parsePositiveInteger(value, fallback) {
-  const numeric = Number(value)
-  if (!Number.isInteger(numeric) || numeric <= 0) {
-    return fallback
-  }
-
-  return numeric
 }
 
 function parseBoolean(value, fallback) {
@@ -373,7 +366,29 @@ function estimateMessagesSize(messages) {
   return total
 }
 
-function compressMessage(message, settings) {
+function findLastUserMessageIndex(messages) {
+  for (let i = (messages || []).length - 1; i >= 0; i--) {
+    if (String(messages[i]?.info?.role || "") === "user") {
+      return i
+    }
+  }
+
+  return -1
+}
+
+function shouldPreserveToolOutput(settings, messageIndex, lastUserMessageIndex) {
+  if (settings.mode !== "max++") {
+    return false
+  }
+
+  if (lastUserMessageIndex < 0) {
+    return true
+  }
+
+  return messageIndex > lastUserMessageIndex
+}
+
+function compressMessage(message, settings, context = {}) {
   const parts = []
 
   for (const part of message.parts || []) {
@@ -382,7 +397,7 @@ function compressMessage(message, settings) {
     }
 
     if (part.type === "tool") {
-      const text = normalizeToolPart(part, settings)
+      const text = normalizeToolPart(part, settings, context)
       if (!text) {
         continue
       }
@@ -396,7 +411,7 @@ function compressMessage(message, settings) {
       continue
     }
 
-    const text = compressTextPart(part.text, settings)
+    const text = compressTextPart(part.text, settings, context)
     if (!text) {
       continue
     }
@@ -415,7 +430,7 @@ function compressMessage(message, settings) {
   }
 }
 
-function compressTextPart(text, settings) {
+function compressTextPart(text, settings, context) {
   const lines = String(text || "").split(/\r?\n/)
   const keptLines = []
   let protectedTag = null
@@ -429,7 +444,7 @@ function compressTextPart(text, settings) {
     }
 
     if (trimmed.startsWith("[tool]")) {
-      const normalizedToolLine = normalizeToolLine(line, settings)
+      const normalizedToolLine = normalizeToolLine(line, settings, context)
       if (normalizedToolLine) {
         keptLines.push(...normalizedToolLine.split("\n"))
       }
@@ -443,7 +458,7 @@ function compressTextPart(text, settings) {
   return cleanupWhitespace(keptLines.join("\n"))
 }
 
-function normalizeToolLine(line, settings) {
+function normalizeToolLine(line, settings, context) {
   if (settings.mode === "pro") {
     return line.replace(/[ \t]+$/g, "")
   }
@@ -460,14 +475,14 @@ function normalizeToolLine(line, settings) {
     return line.replace(/[ \t]+$/g, "")
   }
 
-  return formatToolPayload(payload, settings)
+  return formatToolPayload(payload, settings, context)
 }
 
-function normalizeToolPart(part, settings) {
-  return formatToolPayload(part, settings)
+function normalizeToolPart(part, settings, context) {
+  return formatToolPayload(part, settings, context)
 }
 
-function formatToolPayload(payload, settings) {
+function formatToolPayload(payload, settings, context) {
   if (settings.mode === "pro") {
     return `[tool] ${JSON.stringify(payload)}`
   }
@@ -475,7 +490,7 @@ function formatToolPayload(payload, settings) {
   const toolName = payload.tool || payload.name || "unknown"
   const status = payload.state?.status || payload.status || "unknown"
   const output = formatToolOutput(payload.state?.output ?? payload.output)
-  const body = settings.mode === "max++" ? truncateToolOutput(output, settings) : output
+  const body = shouldOmitHistoricalToolOutput(settings, context, output) ? summarizeHistoricalToolOutput(output) : output
 
   let result = `[tool:${toolName}][${status}]`
   if (body) {
@@ -500,15 +515,28 @@ function formatToolOutput(output) {
   return stripControlLines(text)
 }
 
-function truncateToolOutput(text, settings) {
-  const lines = String(text || "").split(/\r?\n/)
-  const limitedLines = lines.slice(0, settings.toolMaxLines).join("\n")
-  if (limitedLines.length <= settings.toolMaxChars && lines.length <= settings.toolMaxLines) {
-    return limitedLines
+function summarizeHistoricalToolOutput(text) {
+  const normalized = String(text || "")
+  if (!normalized) {
+    return HISTORICAL_TOOL_OUTPUT_OMITTED
   }
 
-  const truncated = limitedLines.slice(0, settings.toolMaxChars)
-  return `${truncated}\n[tool-output-truncated]`
+  const lineCount = normalized.split(/\r?\n/).length
+  const charCount = normalized.length
+  return `${HISTORICAL_TOOL_OUTPUT_OMITTED} (${lineCount} lines, ${charCount} chars)`
+}
+
+function shouldOmitHistoricalToolOutput(settings, context, output) {
+  if (settings.mode !== "max++" || context.preserveToolOutput) {
+    return false
+  }
+
+  const normalized = String(output || "")
+  if (SYSTEM_REMINDER_PATTERN.test(normalized)) {
+    return false
+  }
+
+  return normalized.length > HISTORICAL_TOOL_OUTPUT_OMIT_THRESHOLD_CHARS
 }
 
 function cleanupWhitespace(text) {

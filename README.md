@@ -40,7 +40,7 @@ What you get immediately:
 - Preserves non-framework user text that merely contains similar markers.
 - Preserves `<system-reminder>...</system-reminder>` blocks.
 - Normalizes tool output in `max` and `max++` modes.
-- Truncates oversized tool output in `max++` mode.
+- Replaces historical tool output bodies with a compact placeholder in `max++` mode while keeping the current turn's tool output intact.
 - Tracks saved characters per session, not globally.
 - Adds a bright yellow `snip` label to `home_prompt_right` and `session_prompt_right`.
 - Keeps optional request logging off by default.
@@ -100,9 +100,7 @@ The server plugin supports these options:
 {
   "mode": "max",
   "logEnabled": false,
-  "logPath": "C:/path/to/opencode-llm.log",
-  "toolMaxLines": 40,
-  "toolMaxChars": 4000
+  "logPath": "C:/path/to/opencode-llm.log"
 }
 ```
 
@@ -125,8 +123,12 @@ The server plugin supports these options:
 
 `max++`
 
-- Same as `max`, plus truncates tool output using `toolMaxLines` and `toolMaxChars`.
-- Best when tool output is the main source of prompt bloat.
+- Same as `max`, but only keeps full tool output after the most recent user message.
+- Older tool results are only replaced when they are large enough to be worth compacting.
+- Large historical tool results are retained as lightweight placeholders with status and output-size hints instead of full bodies.
+- Historical tool output that contains `<system-reminder>` is kept intact.
+- Best when old tool output is the main source of prompt bloat.
+- Risk: if the model still needs exact details from an older tool result, `max++` can remove information that would otherwise still be available in history.
 
 ## TUI behavior
 
@@ -177,9 +179,7 @@ Example `opencode.json`:
       "/absolute/path/to/opencode-cashback/src/server.js",
       {
         "mode": "max",
-        "logEnabled": false,
-        "toolMaxLines": 40,
-        "toolMaxChars": 4000
+        "logEnabled": false
       }
     ]
   ]

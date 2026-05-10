@@ -9,9 +9,7 @@
       "default": "./src/server.js",
       "config": {
         "mode": "max",
-        "logEnabled": false,
-        "toolMaxLines": 40,
-        "toolMaxChars": 4000
+        "logEnabled": false
       }
     },
     "./tui": {
