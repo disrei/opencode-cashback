@@ -9,7 +9,8 @@
       "default": "./src/server.js",
       "config": {
         "mode": "max",
-        "logEnabled": false
+        "logEnabled": false,
+        "omitThreshold": 1500
       }
     },
     "./tui": {

@@ -14,7 +14,7 @@ const VERSION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const HISTORICAL_TOOL_OUTPUT_OMITTED = "[historical-tool-output-omitted]"
 const SYSTEM_REMINDER_PATTERN = /<system-reminder(?:\s|>)/i
-const HISTORICAL_TOOL_OUTPUT_OMIT_THRESHOLD_CHARS = 1500
+const DEFAULT_OMIT_THRESHOLD_CHARS = 1500
 
 const REMOVED_CONTROL_PREFIXES = ["[step-start]", "[step-finish]", "[reasoning]"]
 const PROTECTED_BLOCK_TAGS = ["system-reminder"]
@@ -95,12 +95,22 @@ function resolveSettings(options) {
   const mode = normalizeMode(options?.mode)
   const logEnabled = parseBoolean(options?.logEnabled, false)
   const logPath = resolveLogPath(options?.logPath)
+  const omitThreshold = normalizeOmitThreshold(options?.omitThreshold)
 
   return {
     mode,
     logEnabled,
     logPath,
+    omitThreshold,
   }
+}
+
+function normalizeOmitThreshold(value) {
+  const num = Number(value)
+  if (Number.isFinite(num) && num >= 0) {
+    return Math.round(num)
+  }
+  return DEFAULT_OMIT_THRESHOLD_CHARS
 }
 
 function loadCurrentVersion() {
@@ -759,7 +769,7 @@ function shouldOmitHistoricalToolOutput(settings, context, output) {
     return false
   }
 
-  return normalized.length > HISTORICAL_TOOL_OUTPUT_OMIT_THRESHOLD_CHARS
+  return normalized.length > settings.omitThreshold
 }
 
 function cleanupWhitespace(text) {

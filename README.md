@@ -116,11 +116,12 @@ The server plugin supports these options:
 {
   "mode": "max",
   "logEnabled": false,
-  "logPath": "C:/path/to/opencode-llm.log"
+  "logPath": "C:/path/to/opencode-llm.log",
+  "omitThreshold": 1500
 }
 ```
 
-`logEnabled` defaults to `false`.
+`logEnabled` defaults to `false`. `omitThreshold` controls the minimum character length a historical tool output must exceed before `max++` replaces it with a placeholder. Defaults to `1500`. Set to `0` to always compact historical tool output.
 
 ### Modes
 
@@ -140,7 +141,7 @@ The server plugin supports these options:
 `max++`
 
 - Same as `max`, but only keeps full tool output after the most recent user message.
-- Older tool results are only replaced when they are large enough to be worth compacting.
+- Older tool results are only replaced when they are large enough to be worth compacting (exceeds `omitThreshold` characters; default `1500`).
 - Large historical tool results are retained as lightweight placeholders with status and output-size hints instead of full bodies.
 - Historical tool output that contains `<system-reminder>` is kept intact.
 - Best when old tool output is the main source of prompt bloat.
