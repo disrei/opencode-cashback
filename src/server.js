@@ -21,7 +21,7 @@ const REMOVED_CONTROL_PREFIXES = ["[step-start]", "[step-finish]", "[reasoning]"
 const PROTECTED_BLOCK_TAGS = ["system-reminder"]
 const REMOVED_CONTROL_PART_TYPES = new Set(["step-start", "step-finish", "reasoning"])
 
-let cachedSystem = null
+const pendingSystemsBySession = new Map()
 let pendingPackageRemoval = null
 
 export default async function SnipServerPlugin(_input, options) {
@@ -30,11 +30,15 @@ export default async function SnipServerPlugin(_input, options) {
 
   return {
     "experimental.chat.system.transform": async (_input, output) => {
-      cachedSystem = output.system
+      const hookSessionID = resolveHookSessionID(_input)
+      if (hookSessionID) {
+        pendingSystemsBySession.set(hookSessionID, output.system)
+      }
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {
       const originalMessages = output.messages
+      const hookSessionID = resolveHookSessionID(_input)
       const lastUserMessageIndex = findLastUserMessageIndex(originalMessages)
       const omittedHistoricalToolMessageIndexes = getOmittedHistoricalToolMessageIndexes(originalMessages, settings, lastUserMessageIndex)
       const compressedEntries = originalMessages.map((message, index) =>
@@ -44,8 +48,10 @@ export default async function SnipServerPlugin(_input, options) {
           }),
         )
       const compressedMessages = compressedEntries.filter(Boolean)
+      const logSessionID = hookSessionID || detectSessionID(originalMessages, compressedMessages)
+      const systemForLog = consumePendingSystem(logSessionID)
 
-      updateSavedCharsStats(originalMessages, compressedEntries, _input?.sessionID || _input?.session_id)
+      updateSavedCharsStats(originalMessages, compressedEntries, hookSessionID)
 
       output.messages = compressedMessages
 
@@ -56,17 +62,18 @@ export default async function SnipServerPlugin(_input, options) {
       writeFileSync(
         settings.logPath,
         buildLogContent({
-          system: cachedSystem,
+          system: systemForLog,
           originalMessages,
           compressedMessages,
           mode: settings.mode,
           debugInfo: buildCompressionDebugInfo({
-            system: cachedSystem,
+            system: systemForLog,
             originalMessages,
             compressedMessages,
             omittedHistoricalToolMessageIndexes,
             lastUserMessageIndex,
             omitThreshold: settings.omitThreshold,
+            logSessionID,
           }),
         }),
         "utf8",
@@ -499,6 +506,21 @@ function isRecord(value) {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function resolveHookSessionID(hookInput) {
+  const sessionID = hookInput?.sessionID || hookInput?.session_id
+  return typeof sessionID === "string" && sessionID ? sessionID : null
+}
+
+function consumePendingSystem(sessionID) {
+  if (!sessionID) {
+    return null
+  }
+
+  const system = pendingSystemsBySession.get(sessionID) || null
+  pendingSystemsBySession.delete(sessionID)
+  return system
+}
+
 function detectSessionID(originalMessages, compressedMessages) {
   for (const message of [...(originalMessages || []), ...(compressedMessages || [])]) {
     const sessionID =
@@ -921,9 +943,12 @@ function buildCompressionDebugInfo({
   omittedHistoricalToolMessageIndexes,
   lastUserMessageIndex,
   omitThreshold,
+  logSessionID,
 }) {
   return {
-    systemHash: hashValue(system || []),
+    logSessionID,
+    systemAvailable: Array.isArray(system),
+    systemHash: Array.isArray(system) ? hashValue(system) : "unavailable",
     originalMessagesHash: hashValue(originalMessages || []),
     compressedMessagesHash: hashValue(compressedMessages || []),
     lastUserMessageIndex,
@@ -979,6 +1004,8 @@ function buildLogContent({ system, originalMessages, compressedMessages, mode, d
   content += `compression mode: ${mode}\n`
 
   if (debugInfo) {
+    content += `log session id: ${debugInfo.logSessionID || "unavailable"}\n`
+    content += `system available: ${debugInfo.systemAvailable}\n`
     content += `system hash: ${debugInfo.systemHash}\n`
     content += `original messages hash: ${debugInfo.originalMessagesHash}\n`
     content += `compressed messages hash: ${debugInfo.compressedMessagesHash}\n`
@@ -987,7 +1014,7 @@ function buildLogContent({ system, originalMessages, compressedMessages, mode, d
     content += `omitted historical message indexes: ${JSON.stringify(debugInfo.omittedHistoricalToolMessageIndexes)}\n`
   }
 
-  if (system) {
+  if (Array.isArray(system)) {
     content += `\n${"=".repeat(60)}\n`
     content += `[${timestamp}] SYSTEM PROMPT (${system.length} blocks)\n`
     content += "=".repeat(60) + "\n"
@@ -995,6 +1022,10 @@ function buildLogContent({ system, originalMessages, compressedMessages, mode, d
       content += `--- system[${i}] ---\n`
       content += system[i] + "\n"
     }
+  } else {
+    content += `\n${"=".repeat(60)}\n`
+    content += `[${timestamp}] SYSTEM PROMPT unavailable for this request\n`
+    content += "=".repeat(60) + "\n"
   }
 
   if (debugInfo) {
