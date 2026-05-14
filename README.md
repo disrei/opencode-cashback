@@ -126,29 +126,45 @@ The server plugin supports these options:
 
 ### Modes
 
-`pro`
+#### `pro` — conservative cleanup
 
-- Smallest behavior change.
-- Best when you want conservative cleanup.
-- Keeps tool payloads mostly intact.
+Smallest behavior change. Best when you want minimal compression.
 
-`max`
+| Operation | Scope | Effect |
+|---|---|---|
+| Remove framework events | All rounds | Removes `step-start` and `step-finish` control events |
+| Tool output | All rounds | Preserved as-is (only trailing whitespace trimmed) |
+| Reasoning | All rounds | Preserved intact |
+| `<system-reminder>` | All rounds | Protected from removal |
 
-- Default mode.
-- Removes framework noise (`step-start`, `step-finish`).
-- Normalizes tool payloads.
-- Keeps reasoning content intact for all rounds.
-- Best general-purpose setting.
+#### `max` — general purpose (default)
 
-`max++`
+Balanced compression for everyday use. Normalizes tools, keeps reasoning.
 
-- Same as `max`, but only keeps full tool output and reasoning after the most recent user message.
-- Each completed historical round is evaluated independently, so old rounds stay stable instead of being re-expanded by later turns.
-- Older tool results are only replaced when that round's cumulative tool output exceeds `omitThreshold` characters (default `1500`).
-- Large historical tool results are retained as lightweight placeholders with status and output-size hints instead of full bodies.
-- Historical reasoning content is removed to save tokens while keeping the current turn's reasoning intact.
-- Historical tool output that contains `<system-reminder>` is kept intact.
-- Best when old tool output and reasoning are the main source of prompt bloat.
+| Operation | Scope | Effect |
+|---|---|---|
+| Remove framework events | All rounds | Removes `step-start` and `step-finish` control events |
+| Tool output | All rounds | Normalized to compact `[tool:name][status]` format |
+| Reasoning | All rounds | Preserved intact |
+| `<system-reminder>` | All rounds | Protected from removal |
+
+#### `max++` — aggressive
+
+Same as `max`, but also compresses historical tool output and reasoning. Only the current turn (after the most recent user message) keeps full detail.
+
+| Operation | Scope | Effect |
+|---|---|---|
+| Remove framework events | All rounds | Removes `step-start` and `step-finish` control events |
+| Tool output | Current turn | Normalized to compact `[tool:name][status]` format (same as `max`) |
+| Tool output | Historical rounds | Replaced with `[historical-tool-output-omitted] (N lines, N chars, hint)` placeholder, when the round's cumulative tool output exceeds `omitThreshold` (default 1500 chars) |
+| Reasoning | Current turn | Preserved intact |
+| Reasoning | Historical rounds | Removed entirely |
+| `<system-reminder>` | All rounds | Protected from removal |
+
+**Notes:**
+- Each completed historical round is evaluated independently for tool output compression, so old rounds stay stable instead of being re-expanded by later turns.
+- Historical tool output that contains `<system-reminder>` is always kept intact, regardless of threshold.
+- Set `omitThreshold` to `0` to always compact eligible historical tool output.
 - Risk: if the model still needs exact details from an older tool result or previous reasoning chain, `max++` can remove information that would otherwise still be available in history.
 
 ## TUI behavior
